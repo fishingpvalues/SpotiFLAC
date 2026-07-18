@@ -18,7 +18,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/afkarxyz/SpotiFLAC/backend"
+	"github.com/fishingpvalues/SpotiFLAC/backend"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -109,6 +109,11 @@ const spotiFLACStatusPayloadMaxBytes = 128 * 1024
 
 func NewApp() *App {
 	return &App{}
+}
+
+// SetContext sets the app context for headless/non-Wails usage.
+func (a *App) SetContext(ctx context.Context) {
+	a.ctx = ctx
 }
 
 func (a *App) LogStatusConsole(level string, message string) {

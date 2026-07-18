@@ -1,3 +1,5 @@
+//go:build !headless
+
 package main
 
 import (
@@ -5,7 +7,7 @@ import (
 	"encoding/json"
 	"log"
 
-	"github.com/afkarxyz/SpotiFLAC/backend"
+	"github.com/fishingpvalues/SpotiFLAC/backend"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"

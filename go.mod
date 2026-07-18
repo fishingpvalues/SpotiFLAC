@@ -1,4 +1,4 @@
-module github.com/afkarxyz/SpotiFLAC
+module github.com/fishingpvalues/SpotiFLAC
 
 go 1.26
 
