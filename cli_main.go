@@ -156,6 +156,8 @@ func main() {
 			Composer:           t.Composer,
 			SaveCover:          true,
 			EmbedLyrics:        true,
+			TidalAPIURL:        cfg.TidalAPIURL,
+			QobuzAPIURL:        cfg.QobuzAPIURL,
 		}
 		resp, err := app.DownloadTrack(req)
 		if err != nil || !resp.Success {
@@ -239,6 +241,8 @@ func main() {
 			Composer:           track.Composer,
 			SaveCover:          true,
 			EmbedLyrics:        true,
+			TidalAPIURL:        cfg.TidalAPIURL,
+			QobuzAPIURL:        cfg.QobuzAPIURL,
 		}
 
 		resp, err := app.DownloadTrack(req)
@@ -353,15 +357,22 @@ func openCommunityVerificationRelay(target string) {
 	emitJSON(map[string]interface{}{
 		"type": "verification_required",
 		"url":  parsed.String(),
+		// The relay's own caller needs the real upstream_cb as a distinct,
+		// already-parsed field: the relay must only ever forward a grant to
+		// exactly this value, never to whatever a request happens to claim
+		// upstream_cb is (see internal/api/verify in spotiflac-lidarr-proxy).
+		"cb": upstreamCB,
 	})
 }
 
 type cliConfig struct {
-	URL       string
-	OutputDir string
-	Service   string
-	Quality   string
-	Search    string
+	URL         string
+	OutputDir   string
+	Service     string
+	Quality     string
+	Search      string
+	TidalAPIURL string
+	QobuzAPIURL string
 }
 
 func loadCLIFlags() cliConfig {
@@ -371,6 +382,14 @@ func loadCLIFlags() cliConfig {
 	flag.StringVar(&cfg.Service, "service", "tidal", "Download service: tidal, qobuz, amazon, deezer")
 	flag.StringVar(&cfg.Quality, "quality", "LOSSLESS", "Quality: LOSSLESS, HIRES_LOSSLESS")
 	flag.StringVar(&cfg.Search, "search", "", "Search Spotify instead of downloading")
+	// A custom Tidal/Qobuz API instance (self-hosted or a known public one)
+	// is tried first and, if it works, skips the community tier entirely -
+	// see backend/tidal.go's GetDownloadURL and backend/qobuz.go's
+	// GetDownloadURL, both already support this; the CLI just never
+	// exposed flags for it. Falls back to the community tier (and its
+	// one-time verification requirement) only if unset or unreachable.
+	flag.StringVar(&cfg.TidalAPIURL, "tidal-api-url", "", "Custom Tidal API instance URL (bypasses the community tier if set)")
+	flag.StringVar(&cfg.QobuzAPIURL, "qobuz-api-url", "", "Custom Qobuz API instance URL (bypasses the community tier if set)")
 	flag.Parse()
 	return cfg
 }
