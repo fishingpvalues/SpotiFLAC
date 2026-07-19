@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"net/url"
 	"os"
 
 	"github.com/fishingpvalues/SpotiFLAC/backend"
@@ -20,6 +21,22 @@ func main() {
 	_ = backend.InitISRCCacheDB()
 	_ = backend.CleanupLegacyTidalPublicAPIState()
 	_ = backend.SanitizePersistedConfigSettings()
+
+	// The Wails GUI opens the community verification challenge in the
+	// user's own visible browser (see app.go's startup(): runtime.
+	// BrowserOpenURL) and its callback listens on 127.0.0.1, which only
+	// works because that browser runs on the same machine. Headless mode
+	// has neither, so it used to fail immediately ("browser integration is
+	// not ready"). If SPOTIFLAC_VERIFY_RELAY_URL is set, this instead
+	// rewrites the challenge's own "cb" redirect target to point there and
+	// emits the resulting URL on stdout for a caller to relay to a real
+	// person's real browser - the actual verification challenge itself is
+	// untouched and still requires a real human to complete it; this only
+	// solves the network-reachability gap between a loopback-bound
+	// listener on a headless host and a browser on a different machine.
+	// With no relay URL configured, this is a no-op and the CLI behaves
+	// exactly as before (verification simply cannot complete headlessly).
+	backend.SetCommunityVerificationHandlers(openCommunityVerificationRelay, func() {})
 
 	app := NewApp()
 	app.SetContext(context.Background())
@@ -278,6 +295,65 @@ type cliTrackMeta struct {
 	Copyright   string `json:"copyright"`
 	Publisher   string `json:"publisher"`
 	Composer    string `json:"composer"`
+}
+
+// openCommunityVerificationRelay is the openBrowser handler passed to
+// backend.SetCommunityVerificationHandlers. The challengeURL it receives
+// already has a "cb" query param baked in pointing at
+// runCommunityVerification's own 127.0.0.1 listener - see
+// backend/community_session.go. Without a relay configured, this just
+// emits the raw URL (useful if the CLI happens to run on the same machine
+// as the person completing verification). With SPOTIFLAC_VERIFY_RELAY_URL
+// set, it swaps "cb" for that relay URL (carrying the original loopback cb
+// along as its own "upstream_cb" param) so a remote caller can complete the
+// real challenge in their own browser and have the relay forward the
+// resulting grant back to the loopback listener on this machine.
+func openCommunityVerificationRelay(target string) {
+	relayBase := os.Getenv("SPOTIFLAC_VERIFY_RELAY_URL")
+	if relayBase == "" {
+		emitJSON(map[string]interface{}{
+			"type": "verification_required",
+			"url":  target,
+		})
+		return
+	}
+
+	parsed, err := url.Parse(target)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "verification URL parse failed: %v\n", err)
+		return
+	}
+	q := parsed.Query()
+	upstreamCB := q.Get("cb")
+	if upstreamCB == "" {
+		fmt.Fprintf(os.Stderr, "verification URL missing cb param, cannot relay\n")
+		emitJSON(map[string]interface{}{
+			"type": "verification_required",
+			"url":  target,
+		})
+		return
+	}
+
+	relay, err := url.Parse(relayBase)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "SPOTIFLAC_VERIFY_RELAY_URL is invalid: %v\n", err)
+		emitJSON(map[string]interface{}{
+			"type": "verification_required",
+			"url":  target,
+		})
+		return
+	}
+	rq := relay.Query()
+	rq.Set("upstream_cb", upstreamCB)
+	relay.RawQuery = rq.Encode()
+
+	q.Set("cb", relay.String())
+	parsed.RawQuery = q.Encode()
+
+	emitJSON(map[string]interface{}{
+		"type": "verification_required",
+		"url":  parsed.String(),
+	})
 }
 
 type cliConfig struct {
