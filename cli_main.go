@@ -82,26 +82,63 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Parse metadata to extract track list
+	// Parse metadata. GetFilteredSpotifyData's actual JSON shape depends on
+	// the URL type - previously this only checked a "tracks" array (a key
+	// that doesn't exist in any of these responses) and silently fell
+	// through to a near-empty DownloadRequest for every URL, guaranteed to
+	// fail regardless of service (album/playlist real key is "track_list",
+	// singular track is nested under "track", not "tracks"). See
+	// backend.AlbumResponsePayload / PlaylistResponsePayload / TrackResponse.
 	var metadata struct {
-		Tracks []struct {
-			ID       string `json:"id"`
-			Name     string `json:"name"`
-			Artist   string `json:"artist"`
-			ISRC     string `json:"isrc"`
-			Duration int    `json:"duration"`
-		} `json:"tracks"`
-		Title       string `json:"title"`
-		Artist      string `json:"artist"`
-		ReleaseDate string `json:"release_date"`
-		CoverURL    string `json:"cover_url"`
+		AlbumInfo *struct {
+			Name        string `json:"name"`
+			Artists     string `json:"artists"`
+			ReleaseDate string `json:"release_date"`
+			Images      string `json:"images"`
+		} `json:"album_info"`
+		PlaylistInfo *struct {
+			Cover string `json:"cover"`
+			Owner struct {
+				DisplayName string `json:"display_name"`
+			} `json:"owner"`
+		} `json:"playlist_info"`
+		TrackList []cliTrackMeta `json:"track_list"`
+		Track     *cliTrackMeta  `json:"track"`
 	}
-	if err := json.Unmarshal([]byte(metadataJSON), &metadata); err != nil || len(metadata.Tracks) == 0 {
-		// Try single download — metadata might be a single track
+	if err := json.Unmarshal([]byte(metadataJSON), &metadata); err != nil {
+		emitJSON(map[string]interface{}{
+			"type":    "error",
+			"message": fmt.Sprintf("unrecognized metadata response: %s", err),
+		})
+		os.Exit(1)
+	}
+
+	if metadata.Track != nil {
+		// Single track URL: backend returns one "track" object, not a list.
+		t := *metadata.Track
 		req := DownloadRequest{
-			Service:     cfg.Service,
-			OutputDir:   cfg.OutputDir,
-			AudioFormat: cfg.Quality,
+			Service:            cfg.Service,
+			TrackName:          t.Name,
+			ArtistName:         t.Artists,
+			AlbumName:          t.AlbumName,
+			AlbumArtist:        t.AlbumArtist,
+			ReleaseDate:        t.ReleaseDate,
+			CoverURL:           t.Images,
+			OutputDir:          cfg.OutputDir,
+			AudioFormat:        cfg.Quality,
+			SpotifyID:          t.SpotifyID,
+			Duration:           t.DurationMS,
+			Position:           1,
+			SpotifyTrackNumber: t.TrackNumber,
+			SpotifyDiscNumber:  t.DiscNumber,
+			SpotifyTotalTracks: t.TotalTracks,
+			SpotifyTotalDiscs:  t.TotalDiscs,
+			UPC:                t.UPC,
+			Copyright:          t.Copyright,
+			Publisher:          t.Publisher,
+			Composer:           t.Composer,
+			SaveCover:          true,
+			EmbedLyrics:        true,
 		}
 		resp, err := app.DownloadTrack(req)
 		if err != nil || !resp.Success {
@@ -124,38 +161,67 @@ func main() {
 		return
 	}
 
+	if len(metadata.TrackList) == 0 {
+		emitJSON(map[string]interface{}{
+			"type":    "error",
+			"message": "metadata response had neither a single track nor a track_list",
+		})
+		os.Exit(1)
+	}
+
+	albumName, artistName, releaseDate, coverURL := "", "", "", ""
+	switch {
+	case metadata.AlbumInfo != nil:
+		albumName = metadata.AlbumInfo.Name
+		artistName = metadata.AlbumInfo.Artists
+		releaseDate = metadata.AlbumInfo.ReleaseDate
+		coverURL = metadata.AlbumInfo.Images
+	case metadata.PlaylistInfo != nil:
+		artistName = metadata.PlaylistInfo.Owner.DisplayName
+		coverURL = metadata.PlaylistInfo.Cover
+	}
+
 	emitJSON(map[string]interface{}{
-		"type":     "metadata",
-		"artist":   metadata.Artist,
-		"album":    metadata.Title,
-		"released": metadata.ReleaseDate,
-		"tracks":   len(metadata.Tracks),
+		"type":      "metadata",
+		"artist":    artistName,
+		"album":     albumName,
+		"released":  releaseDate,
+		"cover_url": coverURL,
+		"tracks":    len(metadata.TrackList),
 	})
 
 	// Download each track
-	for i, track := range metadata.Tracks {
+	for i, track := range metadata.TrackList {
 		emitJSON(map[string]interface{}{
 			"type":    "progress",
 			"track":   fmt.Sprintf("%02d", i+1),
 			"title":   track.Name,
-			"percent": float64(i) / float64(len(metadata.Tracks)) * 100,
+			"percent": float64(i) / float64(len(metadata.TrackList)) * 100,
 		})
 
 		req := DownloadRequest{
-			Service:      cfg.Service,
-			TrackName:    track.Name,
-			ArtistName:   track.Artist,
-			AlbumName:    metadata.Title,
-			AlbumArtist:  metadata.Artist,
-			ReleaseDate:  metadata.ReleaseDate,
-			CoverURL:     metadata.CoverURL,
-			OutputDir:    cfg.OutputDir,
-			SpotifyID:    track.ID,
-			ISRC:         track.ISRC,
-			Duration:     track.Duration,
-			Position:     i + 1,
-			SaveCover:    true,
-			EmbedLyrics:  true,
+			Service:            cfg.Service,
+			TrackName:          track.Name,
+			ArtistName:         track.Artists,
+			AlbumName:          track.AlbumName,
+			AlbumArtist:        track.AlbumArtist,
+			ReleaseDate:        track.ReleaseDate,
+			CoverURL:           track.Images,
+			OutputDir:          cfg.OutputDir,
+			AudioFormat:        cfg.Quality,
+			SpotifyID:          track.SpotifyID,
+			Duration:           track.DurationMS,
+			Position:           i + 1,
+			SpotifyTrackNumber: track.TrackNumber,
+			SpotifyDiscNumber:  track.DiscNumber,
+			SpotifyTotalTracks: track.TotalTracks,
+			SpotifyTotalDiscs:  track.TotalDiscs,
+			UPC:                track.UPC,
+			Copyright:          track.Copyright,
+			Publisher:          track.Publisher,
+			Composer:           track.Composer,
+			SaveCover:          true,
+			EmbedLyrics:        true,
 		}
 
 		resp, err := app.DownloadTrack(req)
@@ -175,10 +241,9 @@ func main() {
 
 		emitJSON(map[string]interface{}{
 			"type":   "track_done",
-			"artist": track.Artist,
-			"album":  metadata.Title,
+			"artist": track.Artists,
+			"album":  track.AlbumName,
 			"title":  track.Name,
-			"isrc":   track.ISRC,
 			"path":   resp.File,
 		})
 	}
@@ -186,9 +251,33 @@ func main() {
 	emitJSON(map[string]interface{}{
 		"type":   "complete",
 		"path":   cfg.OutputDir,
-		"artist": metadata.Artist,
-		"album":  metadata.Title,
+		"artist": artistName,
+		"album":  albumName,
 	})
+}
+
+// cliTrackMeta mirrors the fields shared by backend.TrackMetadata and
+// backend.AlbumTrackMetadata that the CLI actually needs to build a
+// DownloadRequest. Kept separate from those exported types since neither
+// is guaranteed to stay JSON-tag-identical to the other over time, and this
+// package only cares about a subset of their fields.
+type cliTrackMeta struct {
+	SpotifyID   string `json:"spotify_id"`
+	Name        string `json:"name"`
+	Artists     string `json:"artists"`
+	AlbumName   string `json:"album_name"`
+	AlbumArtist string `json:"album_artist"`
+	DurationMS  int    `json:"duration_ms"`
+	Images      string `json:"images"`
+	ReleaseDate string `json:"release_date"`
+	TrackNumber int    `json:"track_number"`
+	TotalTracks int    `json:"total_tracks"`
+	DiscNumber  int    `json:"disc_number"`
+	TotalDiscs  int    `json:"total_discs"`
+	UPC         string `json:"upc"`
+	Copyright   string `json:"copyright"`
+	Publisher   string `json:"publisher"`
+	Composer    string `json:"composer"`
 }
 
 type cliConfig struct {
