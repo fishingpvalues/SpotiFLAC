@@ -51,6 +51,7 @@ func main() {
 		for _, r := range results.Tracks {
 			emitJSON(map[string]interface{}{
 				"type":        "search_result",
+				"entity":      r.Type,
 				"name":        r.Name,
 				"artist":      r.Artists,
 				"album":       r.AlbumName,
@@ -61,11 +62,20 @@ func main() {
 			})
 		}
 		for _, r := range results.Albums {
+			// An album SearchResult carries its own title in Name and leaves
+			// AlbumName empty (only track results fill AlbumName, with their
+			// containing album). Emitting r.AlbumName here therefore published
+			// every album hit with "album": "", and consumers that key on the
+			// album field could not tell an album apart from a nameless track:
+			// spotiflac-lidarr-proxy dropped all of them, which left Lidarr
+			// with nothing but single tracks to grab and nothing it could
+			// import (it needs >= 80% of an album's tracks).
 			emitJSON(map[string]interface{}{
 				"type":        "search_result",
+				"entity":      r.Type,
 				"name":        r.Name,
 				"artist":      r.Artists,
-				"album":       r.AlbumName,
+				"album":       r.Name,
 				"spotify_url": r.ExternalURL,
 				"cover_url":   r.Images,
 				"year":        r.ReleaseDate,
