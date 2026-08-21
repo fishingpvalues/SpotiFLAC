@@ -144,7 +144,7 @@ func main() {
 			OutputDir:          cfg.OutputDir,
 			AudioFormat:        cfg.Quality,
 			SpotifyID:          t.SpotifyID,
-			Duration:           t.DurationMS,
+			Duration:           t.DurationMS / 1000, // seconds, not ms (duration validator)
 			Position:           1,
 			SpotifyTrackNumber: t.TrackNumber,
 			SpotifyDiscNumber:  t.DiscNumber,
@@ -229,7 +229,7 @@ func main() {
 			OutputDir:          cfg.OutputDir,
 			AudioFormat:        cfg.Quality,
 			SpotifyID:          track.SpotifyID,
-			Duration:           track.DurationMS,
+			Duration:           track.DurationMS / 1000, // seconds, not ms (duration validator)
 			Position:           i + 1,
 			SpotifyTrackNumber: track.TrackNumber,
 			SpotifyDiscNumber:  track.DiscNumber,
