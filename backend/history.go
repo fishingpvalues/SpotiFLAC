@@ -40,7 +40,10 @@ func InitHistoryDB(appName string) error {
 	}
 	dbPath := filepath.Join(appDir, "history.db")
 
-	db, err := bolt.Open(dbPath, 0600, &bolt.Options{Timeout: 1 * time.Second})
+	// 10s, not 1s: see isrc_cache.go - concurrent spotiflac-cli processes from
+	// the lidarr proxy overlap briefly; a 1s flock cap made history writes fail
+	// spuriously under that contention.
+	db, err := bolt.Open(dbPath, 0600, &bolt.Options{Timeout: 10 * time.Second})
 	if err != nil {
 		return err
 	}

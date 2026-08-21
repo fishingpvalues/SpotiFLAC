@@ -41,7 +41,13 @@ func InitISRCCacheDB() error {
 	}
 
 	dbPath := filepath.Join(appDir, isrcCacheDBFile)
-	db, err := bolt.Open(dbPath, 0o600, &bolt.Options{Timeout: 1 * time.Second})
+	// 10s, not 1s: the spotiflac-lidarr-proxy runs this CLI concurrently for
+	// overlapping attempts (a failed attempt's process can outlive the error
+	// event that ends it while the next service's CLI starts). bbolt's flock
+	// times out after Timeout, so a 1s cap turned ordinary cross-process
+	// contention into "failed to read ISRC cache: timeout" warnings on every
+	// track of the second process.
+	db, err := bolt.Open(dbPath, 0o600, &bolt.Options{Timeout: 10 * time.Second})
 	if err != nil {
 		return err
 	}
