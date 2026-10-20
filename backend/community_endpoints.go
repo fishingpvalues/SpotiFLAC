@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -142,9 +143,31 @@ func IsCommunityCooldownError(err error) bool {
 	return errors.As(err, &cooldownErr)
 }
 
+// communityBaseURL returns the base URL named by envKey when it is set,
+// otherwise the built-in default decrypted from the given blob. The override
+// keeps the app usable if a community host moves or disappears.
+func communityBaseURL(envKey string, nonce, ciphertext, tag []byte) string {
+	if override := strings.TrimRight(strings.TrimSpace(os.Getenv(envKey)), "/"); override != "" {
+		return override
+	}
+	base, _ := decryptCommunityURL(nonce, ciphertext, tag)
+	return base
+}
+
+func tidalCommunityBaseURL() string {
+	return communityBaseURL("SPOTIFLAC_TIDAL_COMMUNITY_URL", tidalCommunityURLNonce, tidalCommunityURLCiphertext, tidalCommunityURLTag)
+}
+
+func qobuzCommunityBaseURL() string {
+	return communityBaseURL("SPOTIFLAC_QOBUZ_COMMUNITY_URL", qobuzCommunityURLNonce, qobuzCommunityURLCiphertext, qobuzCommunityURLTag)
+}
+
+func amazonCommunityBaseURL() string {
+	return communityBaseURL("SPOTIFLAC_AMAZON_COMMUNITY_URL", amazonCommunityURLNonce, amazonCommunityURLCiphertext, amazonCommunityURLTag)
+}
+
 func GetTidalCommunityDownloadURL() string {
-	base, _ := decryptCommunityURL(tidalCommunityURLNonce, tidalCommunityURLCiphertext, tidalCommunityURLTag)
-	return base + communityDownloadPath
+	return tidalCommunityBaseURL() + communityDownloadPath
 }
 
 func GetQobuzCommunityDownloadURL() string {
@@ -163,8 +186,7 @@ func GetAmazonCommunityDownloadURL() string {
 }
 
 func GetCommunityVerifyURL() string {
-	base, _ := decryptCommunityURL(communityVerifyURLNonce, communityVerifyURLCiphertext, communityVerifyURLTag)
-	return base
+	return communityBaseURL("SPOTIFLAC_VERIFY_URL", communityVerifyURLNonce, communityVerifyURLCiphertext, communityVerifyURLTag)
 }
 
 func communityRetryAfter(resp *http.Response) time.Duration {
